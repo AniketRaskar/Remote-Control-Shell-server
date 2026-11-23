@@ -1,0 +1,50 @@
+Why is EPOLLONESHOT useful in your project?
+
+Imagine two worker threads both attempt to handle the same client socket. They might read from the same connection or modify its state at the same time, causing a race condition. 
+With EPOLLONESHOT, the socket's notifications are disabled after an event is delivered, until the application re-arms it with EPOLL_CTL_MOD. This helps prevent two workers from simultaneously processing the same socket through separate readiness notifications, provided the application follows the intended ownership protocol.
+
+But receiving a command and executing a command are two different operations.
+- recv() receives bytes from the client.
+- popen() executes a command through a shell and can provide its output to the server.
+Your project documentation describes using popen() to execute commands and collect standard output.
+What is popen()?
+popen() is a C library function that executes a command through a shell and opens a pipe to communicate with the command.
+
+Its syntax is:
+FILE* popen(const char* command, const char* mode);
+
+
+There are two common modes:
+Mode	Meaning
+"r"	Your program reads the command's standard output
+"w"	Your program writes to the command's standard input
+
+For your project, the "r" mode is important because you want to execute a command and collect its output.
+Therefore, for a blocking socket, you generally need a loop that continues sending until all bytes are sent or an error occurs.
+
+For a non-blocking socket, you must also handle EAGAIN/EWOULDBLOCK and maintain an output buffer so that sending can resume when the socket becomes writable.
+
+Therefore, the server should:
+1. Use a non-blocking socket.
+2. Read repeatedly until EAGAIN or EWOULDBLOCK.
+3. Then wait for the next notification.
+Interview point: Edge-triggered epoll can reduce repeated notifications, but you must handle the socket correctly.
+2. What is EPOLLET?
+EPOLLET is the flag used to enable edge-triggered behavior in epoll.
+EPOLLONESHOT means notify me once, then disable this socket's event notification until I rearm it.
+After epoll reports the event, you must rearm it using:
+epoll_ctl(epfd, EPOLL_CTL_MOD, fd, &ev);
+This is useful when a worker thread is processing a client's request. It helps prevent another event from being delivered for that socket before the application is ready to handle it again.
+Feature	Meaning
+EPOLLET	Notify on readiness transitions
+EPOLLONESHOT	Notify once, then disable until rearmed
+EPOLLIN	Socket is ready for reading
+
+Limitation :
+Add authentication, encrypted communication using TLS, command authorization, safer process execution, request framing, and execution time and output limits.
+Is your project secure?
+
+The basic project demonstrates remote command execution, but it should not be considered production-secure without authentication, authorization, encryption, and safe command handling.
+How did you measure the 30% CPU reduction mentioned in your resume?
+
+Be ready to explain the actual baseline, test conditions, number of clients, measurement method, and whether the result was measured or estimated. Don't invent benchmark details.
